@@ -1,0 +1,535 @@
+---
+title: "Trabajo final"
+author: "Miguel Sánchez"
+date: '2022-12-07'
+output: word_document
+---
+
+# Introducción
+
+```{r}
+#importamos los datos
+datos<-read.csv(file= "/Users/miguel/Desktop/Mineria de datos/Diabetes.csv",sep=",",header = T)
+```
+
+Vamos a utilizar la libreria skimr para hacer un análisis exploratorio de los datos. En este análisis veremos que tipo de variables tienen los datos (numeric, character o factor), que variables tienen NA´s o valores constantes entre otras cosas.
+
+```{r}
+#cargamos la libreria skimr
+library(skimr)
+#anlisis exploratorio de los datos
+skimr::skim(datos)
+```
+
+Como podemos ver los datos nos dan la infromacion de 768 mujeres que corresponden al número de filas, por otro lado, tenemos 9 variables contando con la variable respuesta que corresponden al número de columnas. Todas las variables son númericas, esto nos facilitará bastante la manipulación de los datos ya que nos permitirá hacer entre otras cosas un PCA (analisis de las componentes principales).
+
+A simple vista, podemos ver como todas las variables a excepción de la variable respuesta que es la que nos indica si el paciente tiene o no diabetes tienen NA´s
+
+Para empezar, transformaremos la variable respuesta de tipo numerico a factor, ya que los valores de esta variable estan mejor representados con factors que con numerics. Además a la hora de analizar las correlaciones entre las variables y las componentes principales no necesitaremos la variable respuesta, ya que para estos analisis usaremos solo las variables independientes.
+
+```{r}
+datos$Outcome=as.factor(datos$Outcome)
+```
+
+```{r}
+head(datos)
+```
+
+Por otro lado, podemos ver como hay variables que tienen valores 0 en muchas instancias, algo que en algunos casos carece de sentido. Por ejemplo, no tiene sentido que una persona tenga la insulina, la glucosa, la presión sanguinea,el grosor de la piel o el índice de masa corporal de nivel 0. Las únicas variables en las que pueden tener sentido los ceros son en el número de embarazos y en la variable "Outcome" en la que el cero representa que la mujer en cuestión no tiene diabetes.
+
+En concordancia con lo anterior, nos disponemos a trtansformar los valores 0 de las variables independientes mencionadas en NA´s para su posterior imputación.
+
+```{r}
+#transformamos en NA´s todos los valores 0 
+datos$Glucose[datos$Glucose == 0]<- NA
+datos$Insulin[datos$Insulin == 0]<- NA
+datos$BloodPressure[datos$BloodPressure == 0]<- NA
+datos$SkinThickness[datos$SkinThickness == 0]<- NA
+datos$BMI[datos$BMI == 0]<- NA
+datos$Age[datos$Age == 0]<-NA
+datos$DiabetesPedigreeFunction[datos$DiabetesPedigreeFunction==0]<-NA
+```
+
+Por otra parte, vemos como en la variable "DiabetesPedigreeFunction", los valores mayores que 1 carecen de sentido ya que estamos hablando de una probabilidad.
+
+```{r}
+datos$DiabetesPedigreeFunction[datos$DiabetesPedigreeFunction >1]<-NA
+```
+
+Para ver la proporción de NA´s de cada variable crearemos una función
+
+```{r}
+n_NA <- apply(datos,2,function(x)
+sum(is.na(x)))
+
+Indices = which(n_NA!=0)
+NAS <- data.frame(Indices=which(n_NA!=0),numero_de_NAs=n_NA[Indices])
+NAS <- cbind(NAS,Proporcion_NA=NAS[,2]/nrow(datos))
+
+NAS
+```
+
+Como podemos ver, las variables con una mayor cantidad de NA´s, son
+
+# Imputación
+
+Para imputar las missing values utilizaremos el paquete mice, el cual nos permitirá hacer una imputación multivariante sobre los datos, esto quiere decir que predeciremos los valores faltantes utilizando el resto de valores de las otras variables para esa instancia. De esta manera, lograremos una imputación más acertada sobre los NA´s.
+
+```{r}
+#cargamos paquete mice
+library(mice)
+#cargamos paquete VIM
+library(VIM)
+```
+
+```{r}
+datos_miss = aggr(datos, col=mdc(1:2), numbers=TRUE, sortVars=TRUE, labels=names(datos), cex.axis=.7, gap=3, ylab=c("Proportion of missingness","Missingness Pattern"))
+```
+
+Aqui podemos observar de forma gráfica la información contada anteriormente. Hay dos variables con una proporción de NA´s muy por encima del resto, estas variables son "Insulin" y "SkinThickness". El resto de variables a excepción de la variable respuesta, tiene un porcentage parecido de NA´s que oscila desde el 5% aprox hasta el 10% aprox.
+
+Por otra parte, en el gráfico de la derecha podemos ver los diferentes tipos de patrones que siguen los missing values. Como el lógico, el patron que más se repite es aquel en el que no hay NA´s. A partir de aqui, el patrón de NA´s más repetido es aquel en el que solo las variables "Insulin" y "SkinThickness" tienen valor nulo y el resto de valores están presentes. El tercer patrón que más se repite es aquel en el que solo la variable "insulin" posee missing value.
+
+Aplicamos el paquete mice para imputar los datos, en el que creamos 10 datasets imputados a través 100 interacciones como máximo.
+
+```{r}
+mice_imputes = mice(datos, m=5, maxit = 100)
+```
+
+Vemos que método utilizamos para la imputación de cada una de las variables,
+
+```{r}
+mice_imputes$method
+```
+
+AL ser todas nuestras variables que poseen missing values de tipo numerico, el modelo utilizado por el paquete para predecir los NA´s ha sido un PPM (Predictive Mean Matching).
+
+Procedemos a imputar los datos,
+
+```{r}
+#imputed dataset
+datos1<-complete(mice_imputes,5)
+```
+
+Hacemos un densityplot para saber si nuestra imputación es lo suficientemente buena.
+
+```{r}
+#make a density plot
+densityplot(mice_imputes)
+```
+
+La lineas azules corresponden con las distribuciones de los datos observados mientras que las lineas rojas corresponden con la distribuciones de los datos imputados. Como ambas distribuciones son similares, podemos decir que la imputación ha sido efectiva.
+
+# Relación entre las variables
+
+A continuación, antes de ver las correlaciones entre las variables, visualizaremos de manera gráfica las relaciones entre las distintas variables. Para este análisis de las variables haremos uso de las librerías tidyverse y ggplot2.
+
+En este apartado de la práctica sacaremos conclusiones muy prematuras que aunque se deben tener en cuenta, no debemos tomarlas como definitivas, ya que serán las correlaciones las que nos den una mayor certeza de la relación que guardan las variables entre si.
+
+```{r}
+#cargamos las librerias requeridas
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+```
+
+## Age y Pregnancies
+
+```{r}
+#agrupamos los datos según si el paciente tiene o no diabetes
+by_outcome<- group_by(datos1, Outcome)
+#utilizamos la función summarize para saber la media de embarazos y edad que tiene la paciente dependiendo si tiene o no diabetes
+preg_age<- summarize(by_outcome, 
+                  count=n(), 
+                  preg=mean(Pregnancies, na.rm=T),
+                   age=mean(Age, na.rm = T))
+preg_age
+```
+
+La edad media de las mujeres con diabetes es de 37 años mientras que la edad media de las mujeres sin diabetes es de 31 años. Por otro lado, el número de embarazos medio de las mujeres con diabetes es de 5 aprox mientras que el número medio de embarazos de aquellas sin diabetes es de 3 embarazos aprox. Teniendo unicamente en cuenta esta tabla, podemos suponer que a las mujeres con más numero de embarazos y más mayores son más propensas a tener diabetes.
+
+## Insulin y Glucose
+
+Como bien sabemos, la insulina es la hormona que permite que la glucosa pase a las células por lo que juega un papel fundamental en el mantenimiento de los niveles de glucosa en sangre. Por esto, cuanto más glucosa tengamos en nuestro cuerpo, necesitaremos una mayor insulina para procesarla. A continuación visualizamos gráficamente la relación entre la glucosa y la insulina.
+
+```{r}
+#realizamos un ggplot con dos variables continuas 
+ggplot(datos1, aes(x = Glucose, y = Insulin)) + geom_point(col = "darkblue", size = 2.0)
+```
+
+Como era de esperar, la glucosa y la insulina siguen una relación lineal ya que a mayor nivel de glucosa, más insulina generará nuestro cuerpo para procesar esta glucosa.
+
+A continuación, haremos el mismo plot pero añadiendo dos variables más al estudio.
+
+```{r}
+ggplot(data = datos1) + 
+  geom_point(mapping = aes(x = Glucose, y = Insulin, size=Pregnancies, color = Outcome))
+```
+
+A diferencia del plot anterior, aqui podemos ver como las mujeres diabéticas tienen un mayor nivel de glucosa que las no diabéticas, lo que conlleva a que también tengan un mayor nivel de insulina.
+
+La diabetes se caracteriza porque las personas que la padecen no producen una cantidad suficiente de insulina o su organismo no sabe utilizarla. AHora analizaremos a través de un boxplot la relación que guarda el ser o no diabético con el nivel de insulina en sangre.
+
+```{r}
+#como queremos ver la relación de una variable categorica con una variable continua utilizaremos un boxplot
+ggplot(data = datos1) +
+  geom_boxplot((aes(x=Insulin, y=Outcome, ymax=150, ymin=0, fill=factor(Outcome))))
+```
+
+El resultado del gráfico a primera vista no es el esperado, ya que aquellas mujeres con diabetes deberían tener un nivel más bajo de insulina en su cuerpo mientras que el boxplot muestra que la media de insulina de las mujeres con diabetes es superior a las que no tienen diabetes. De esta manera, los resultados concuerdan con el gráfico anterior que mostraba también como las mujeres con diabétes tendian a tener un mayor nivel de insulina.
+
+Esto puede ser porque en general, las personas diabéticas lo son, bien porque no producen insulina o bien porque su organismo no sabe utilizarla. Según nuestros datos, el ser diabético no implica tener un mayor nivel de insulina.
+
+## BMI y SkinThickness
+
+Las variables "BMI"(índice de masa corporal) y "SkinThickness" (grosor de la piel) deberián a priori estar correlacionadas, ya que es lógico que cuanto mayor grosor tenga tu piel, mayor grasa corporal tienes. Para verificar esta teoría, analizaremos de manera gráfica estas dos variables, pero además teniendo en cuenta la variable respuesta.
+
+```{r}
+ggplot(data = datos1) + 
+  geom_point(mapping = aes(x = BMI, y = SkinThickness, color = Outcome))
+
+```
+
+Como era de esperar, las variables "BMI" y "SkinThickness" tienen una relación lineal bastante apreciable. Por otro lado, es difcil sacar una conclusión respecto a la relación que guardan estas con la variable "Outcome".
+
+# Análisis de las Componentes Principales
+
+En este punto de la práctica, veremos la correlación exacta que guardan las variables independientes entre si y procederemos a analizar cuales son las componentes principales, hasta que punto podemos reducir el número de variables independientes a utilizar y con cuantas de las componentes nos quedamos.
+
+Cargamos las librerias FactoMineR y factoextra
+
+```{r}
+#cargamos las libreias 
+library(FactoMineR)
+library(factoextra)
+```
+
+A la hora de realizar el PCA, lo haremos sobre las variables independientes, por lo que creamos uns datos donde solo se encuentran estas últimas.
+
+```{r}
+datos2<-datos1[,-9]
+```
+
+## Matriz de correlaciones
+
+```{r}
+##Correlaciones
+matrix_corr<-round(cor(datos2),2)
+matrix_corr
+```
+
+A simple vista, podemos confirmar lo que habímos visto en los gráficos, las variables que muestran una mayor correlación son "Pregnancies" con "Age", "Glucose" con "Insuline" y "SkinThickness" con "BMI". El resto de correlaciones no son tan llamativas ya que están por debajo de 0,5.
+
+Para verlo de manera más visual, a continuación mostramos dos gráficos con las distintas correlaciones.
+
+```{r}
+#cargamos paquete corrpot
+library(corrplot)
+#Visualización gráfica de las correlaciones
+pairs(datos2,col=4)
+corrplot.mixed(cor(datos2),tl.col = 1)
+```
+
+En el segundo gráfico podemos ver de manera más visual lo que hemos apreciado en la matriz de correlaciones, y es que las tres correlaciones que más resaltan en el gráfico son las ya mencionadas.
+
+## PCA
+
+Para realizar el PCA utilizaremos la función pca de la librería FactorMineR.
+
+```{r}
+#PCA 
+res.pca = PCA(datos2,graph=F)
+res.pca
+```
+
+```{r}
+#Visualización gráfica del PCA
+fviz_eig(res.pca,addlabels=T,ylim=c(0,50))
+```
+
+Fijandonos en el gráfico, podemos ver como la variabilidad explicada se reparte significativamente entre las distintas componenetes. Esto se debe a que las variables, por lo general, no están muy correladas. Casi el 50% de la información de los datos la explican entre la primera y la segunda componente. Lo más razonable sería escoger las cinco primeras componentes principales de las ocho totales y descartar las tres últimas, principalmente por dos motivos. En primer lugar, las cinco primeras componentes explican más de un 80% de la información proveniente de los datos. En segundo lugar y teniendo en cuenta lo anterior, a partir de la quinta componente la pendiente del gráfico tiene un mayor descenso al que venía teniendo. Esto se debe a que las tres últimas componentes nos aportan bastante menos información que las primeras.
+
+## Relación entre el PCA y las variables originales
+
+Ahora, nos dispondremos a analizar la relación que hay entre el PCA y las variables originales.
+
+```{r}
+var=get_pca_var(res.pca)
+var
+var$cor
+```
+
+A continuación, represemtamos gráficamente la relación entre el PCA y las variables originales,
+
+```{r}
+#representación gráfica 
+corrplot(var$cos2,is.corr=F,col=COL2('PiYG',200),tl.col = "black")
+```
+
+Observando el gráfico, podemos darnos cuenta de como la primera componente explica es su mayoria la variable "Glucose" seguida de "Insulin" y "BMI", mientras que la segunda componente explica mayoritariamente las variable "Pregnancies" y "Age". Es llamativo ver también como la cuarta componente explica casi es su totalidad la variable "DiabetesPedigreeFunction" y la quinta componente explica mayoritariamente la variable "BloodPressure".
+
+A la hora de representar gráficamente el cículo de correlaciones utilizaremos solamente las dos primeras componentes pricipales debido a que los graficos utilizados son en dos dimensiones. Esto no quita que sigamos manteniendo la conclusión del apartado anterior donde lo más inteligente sería seleccionar las cinco primeras componentes.
+
+```{r}
+fviz_pca_var(res.pca,col.var="cos2",repel=T)
+```
+
+Mirando el circulo de correlaciones nos damos cuenta como las variable "Glucose" tiene una correlación casi total con la segunda componente. Las variables "Insuline" y "BloodPressure" tambien estan correladas con la segunda componente principal mientras que "DiabetesPedigreeFunction" y "Pregnancies" son las unicas que estan mas correladas con la segunda componente. Además, podemos ver la relación que existe entre las distintas variables. Por ejemplo, cuanto mayor es el nivel de glucosa, mayor es el nivel de insulina, y cuanto mayor sea el número de embarazos mayor sera la edad. Esto es debido a que las flechas que representan estas variables toman la misma dirección.
+
+## Contribución de las variables a las componentes principales
+
+```{r}
+corrplot(var$contrib,is.corr=F)
+```
+
+Aunque este gráfico se muy parecido al gráfico anterior, nos muestran cosas distintas. En el gráfico anterior podiamos ver como las componentes principales explicaban en distinto grado cada una de las variables originales, en cambio este plot muestra lo contrario, es decir, como contribuyen las variables a las componentes principales. De esta manera, podemos ver como en la primera componente participan mas o menos de manera uniforme todas las variables. Por otro lado, las variables que más contribuyen a la segunda componente son "Pregnancies" y "Age". Llama la atención que a la cuarta componente prácticamente solo contribuye la variable "DiabetesPedigreeFunction", mientras la variable que más contribuye a la quinta componente es "BloodPressure".
+
+# Análisis Cluster
+
+En este apartado de la práctica, primero haremos un cluster sobre el conjunto de observaciones, y después haremos otro análisis cluster sobre las variables.
+
+Cargamos la librería cluster,
+
+```{r}
+library(cluster)
+```
+
+## Clustering de las observaciones
+
+En el análisis cluster de las observaciones, utilizaremos los dos métodos que hemos visto en clase, por un lado método jerarquico aglomerativo, y por otro lado, el método no jerarquico en el que utilizaremos el algoritmo k-means.
+
+Tanto para un método como para el otro, tendremos que calcular las distancias euclideas las cuales nos permitiran saber la distancia que hay entre los clusters en el caso del método jerarquico, y la distancia entre las observaciones y los centroides de los clusters en el caso del método no jerarquico.
+
+Calculamos las distancias euclideas de las observaciones, 
+
+```{r}
+#creamos las distancias
+distancias <- dist(datos2, method = "euclidean")
+```
+
+## Método jerarquico aglomerativo
+
+Para calcular las distancias entre los clusters utilizaremos el método "single linkage", que si bien recordamos se caracteriza porque define la distancia entre dos grupos como la distancia más pequeña entre un individuo del primer grupo y otro del segundo grupo.
+
+```{r}
+fit <- hclust(distancias, method="single")
+summary(fit)
+```
+
+Finalmente, realizamos un dendrogrma para visualizar los clusters,
+
+```{r}
+#dendograma
+plot(fit, cex=0.7)
+```
+
+
+## Método no jerarquico con k-means
+
+En este caso, dicidiremos de ante mano el conjunto de observaciones en k clases, de manera que cada observación pertenecerá a una sola clase. Para aplicar este método, utilizaremos el algoritmo k-means el cual se basa en asignar a cada dato el cluster cuyo centroide este a una menor distancia.
+
+Aplicamos el algoritmo k-means para tres clusters,
+```{r}
+#k.means con K=3
+diabetes.kmedias<-kmeans(datos2, 3)
+summary(diabetes.kmedias)
+```
+
+Para saber el número de mujeres diabéticas que hay en cada cluster,
+```{r}
+diabetes.clases=as.numeric(datos1[,9])
+tabla.kmedias<-table(diabetes.kmedias$cluster,diabetes.clases)
+tabla.kmedias
+clase1<-tabla.kmedias[1,1]/(tabla.kmedias[1,1]+tabla.kmedias[1,2])
+paste("% de mujeres no diabeticas en el primer cluster",clase1)
+clase2<-tabla.kmedias[2,1]/(tabla.kmedias[2,1]+tabla.kmedias[2,2])
+paste("% de mujeres no diabeticas en el segundo cluster",clase2)
+clase3<-tabla.kmedias[3,1]/(tabla.kmedias[3,1]+tabla.kmedias[3,2])
+paste("% de mujeres no diabeticas en el tercer cluster",clase3)
+```
+
+Podemos ver que el tercer cluster es donde se agrupan la mayoría de mujeres diabéticas mientras que el segundo cluster se agrupan en mayor parte aquellas que si que tienen diabetes.
+
+Visualizamos el análisis cluster con k-means a través del paquete "Rtsne",
+```{r}
+library(Rtsne)
+tsne_obj <- Rtsne(distancias, is_distance = TRUE)
+
+tsne_data <- tsne_obj$Y %>%
+  data.frame() %>%
+  setNames(c("X", "Y")) %>%
+  mutate(cluster = factor(diabetes.kmedias$cluster),
+         name = datos2)
+
+ggplot(aes(x = X, y = Y), data = tsne_data) +
+  geom_point(aes(color = cluster))
+```
+
+En el plot se puede apreciar claramente los tres grupos de observaciones. Aún así, hay un grupo muy reducido, tal vez sería más interesante simplificarlo un poco y dividir las observaciones en dos cluster.
+
+
+## Clustering de las variables
+
+Calculamos las distancias entre las variables, pero en este caso, utilizando las correlaciones calculadas con la matriz de correlaciones en el análisis de las componentes principales. 
+
+```{r}
+d_variables<-as.dist(sqrt((1-matrix_corr)/2))
+```
+
+Creamos los clusters
+
+```{r}
+fit2<-hclust(d_variables)
+fit2
+```
+
+Hacemos un dendrograma para visualizar los clusters,
+
+```{r}
+#Dendrograma
+plot(fit2,cex=0.7)
+```
+
+Como podemos ver en el Dendrograma, atendiendo a las correlaciones, se crearían tres clusters principalmente. Por una lado, estarían agrupadas las variables "BloodPressure", "Age" y "Pregnancies", mientras que en el otro cluster tendriamos las variables "Glucose" y "Insuline". Por útimo tendriamos por separado la variable "diabetesPedigreeFunction" ya que esta no esta correlada con ninguna de las demás. 
+En cierta manera, el Dendrograma muestra el resultado esperado, ya que después de haber analizado las variables gráficamente y sus correlaciones nos hacíamos una idea de como podía ser el cluster de variables.
+
+
+# Predicciones
+
+En este apartado del trabajo, prediciremos si el paciente tiene o no diabetes. Para ello, utilizaremos cuatro modelos, un modelo de svm sin ajuste de hiperparmentros, un svm con ajuste de hiperparametros, un modelo de regresión logística y un modelo de análisis de discriminación lineal. El modelo de regresión lineal no lo utilizamos debiso a que nos encontramos ante un problema de clasificación por lo que nuestra variable respuesta es categórica.
+
+```{r}
+accuracy_models<-c()
+```
+
+
+## SVM sin ajuste de hiperparámetros
+
+En este modelo svm, utilizaremos para los hiperparametros los valores predeterminados de función svm
+
+```{r}
+#cargamnos libreria para vsm
+library(e1071)
+```
+
+
+```{r}
+#ajustamos un modelo svm a los datos
+diabetes.svm=svm(Outcome ~., datos1)
+summary(diabetes.svm)
+```
+
+Realizamos las predicciones,
+
+```{r}
+diabetes.svm.predict=predict(diabetes.svm, datos1)
+tabla.svm<-table(diabetes.svm.predict,datos1[,9])
+tabla.svm
+accur_1<-tabla.svm[1,1]/(tabla.svm[2,1]+tabla.svm[1,1])
+accur_2<-tabla.svm[2,2]/(tabla.svm[2,2]+tabla.svm[1,2])
+aciertos<-c(accur_1*100,accur_2*100)
+names(aciertos)<-c("% aciertos tipo 1", "% aciertos tipo 2")
+aciertos
+total_accuracy_svm<-(tabla.svm[1,1]+tabla.svm[2,2])/nrow(datos1)
+paste("accuracy=", total_accuracy_svm)
+accuracy_models<-c(accuracy_models,total_accuracy_svm)
+```
+
+
+
+## SVM con ajuste de hiperparametros
+
+Ajustamos los hiperparametros con la función tune que nos dará el valor óptimo para estos.
+
+```{r}
+tuneResult<-tune(svm, Outcome ~.,  data = datos1,
+                 ranges = list(epsilon = seq(0,1,0.1), cost =seq(0.05,2,0.05) ))
+tuneResult$best.model
+```
+```{r}
+plot(tuneResult)
+```
+
+
+Creamos el modelo, 
+
+```{r}
+diabetes.svm1=svm(Outcome ~., datos1,type="C-classification",kernel="radial",cost=0.3,scale=T)
+summary(diabetes.svm1)
+```
+
+Creamos las predicciones del modelo
+```{r}
+diabetes.svm1.predict=predict(diabetes.svm1, datos1)
+tabla.svm.hp<-table(diabetes.svm1.predict,datos1[,9])
+tabla.svm.hp
+accur_1<-tabla.svm.hp[1,1]/(tabla.svm.hp[2,1]+tabla.svm.hp[1,1])
+accur_2<-tabla.svm.hp[2,2]/(tabla.svm.hp[2,2]+tabla.svm.hp[1,2])
+aciertos<-c(accur_1*100,accur_2*100)
+names(aciertos)<-c("% aciertos tipo 1", "% aciertos tipo 2")
+aciertos
+total_accuracy_svm1<-(tabla.svm.hp[1,1]+tabla.svm.hp[2,2])/nrow(datos1)
+paste("accuracy=", total_accuracy_svm1)
+accuracy_models<-c(accuracy_models,total_accuracy_svm1)
+```
+
+
+## Regresión Logística
+
+
+Creamos el modelo de regresión logística, 
+
+```{r}
+logit_fit=glm(Outcome~., data=datos1, family="binomial")
+summary(logit_fit)
+```
+
+Realizamos las predicciones,
+
+```{r}
+tabla_l<-table(1*(predict(logit_fit,type ="response")>=0.5),datos1$Outcome)
+tabla_l
+accur_1<-tabla_l[1,1]/(tabla_l[2,1]+tabla_l[1,1])
+accur_2<-tabla_l[2,2]/(tabla_l[2,2]+tabla_l[1,2])
+aciertos<-c(accur_1*100,accur_2*100)
+names(aciertos)<-c("% aciertos tipo 1", "% aciertos tipo 2")
+aciertos
+total_accuracy_logit<-(tabla_l[1,1]+tabla_l[2,2])/nrow(datos1)
+paste("accuracy=", total_accuracy_logit)
+accuracy_models<-c(accuracy_models,total_accuracy_logit)
+```
+
+
+## Ánalisis discriminante lineal mediante la aproximación de Fisher
+
+Como bien sabemos de la teoría, el analisis discriminante lineal es un método de clasificación en la que dos o más grupos son conocidos y las observaciones se clasifican en cada uno de ellos en función de sus características. A diferencia de la bayesiana, la aproximación de Fisher reducia la dimension de los datos antes de aplicar el logaritmo, los datos se proyectaban sobre la mejor recta posible, y luego se discrimina entre los datos proyectados.
+
+Para este modelo utilzaremos el paquete "MASS" y la función lda(),
+
+```{r}
+#cargamos libreria
+library(MASS)
+```
+
+Creamos el modelo,
+```{r}
+diabetes.lda <- lda(formula = Outcome ~ .,data = datos1)
+summary(diabetes.lda)
+```
+
+
+```{r}
+predicciones <- predict(object = diabetes.lda, newdata = datos2,method = "predictive")
+lda_accuracy <- mean(datos1$Outcome == predicciones$class)
+paste("accuracy=", lda_accuracy)
+accuracy_models<-c(accuracy_models,lda_accuracy)
+```
+
+```{r}
+names(accuracy_models)<-c("svm sin ajuste de HP","svm con ajuste de HP", "Regresión logística", "Análisis discriminante lineal")
+accuracy_models
+```
+
+Viendo los resultados podemos ver como todos los modelos predicen correctamente el 80% de las observaciones aprox, por lo que el porcentaje de acierto de los cuatro modelos es muy similar. Aún así, el modelo que mejor predice los datos es el svm sin ajuste de hiperparametros seguido del svm con ajuste de los mismos. Por lo que podemos concluir que en este problema de clasificación el modelo svm es el mejor predictor.
+
+
