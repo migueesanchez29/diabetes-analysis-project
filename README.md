@@ -40,7 +40,7 @@ Para reproducir este análisis, primero clona el repositorio y luego instala las
 git clone https://github.com/tuusuario/diabetes-analysis-project.git
 cd diabetes-analysis-project
 
-### Instala las librerías necesarias en R
+### Librerías necesarias en R
 install.packages(c("skimr", "mice", "VIM", "tidyverse", "ggplot2"))
 
 
