@@ -11,11 +11,7 @@ Este trabajo fue realizado para la asignatura de Minería de Datos de mi grado u
 5. [Análisis Cluster](#análisis-cluster)
 6. [Predicciones](#predicciones)
 7. [Instalación](#instalación)
-8. [Uso](#uso)
-9. [Contribución](#contribución)
-10. [Licencia](#licencia)
-11. [Contacto](#contacto)
-12. [Agradecimientos](#agradecimientos)
+
 
 ## Introducción
 Este análisis utiliza datos de 768 mujeres, cada una con 9 variables incluyendo la variable respuesta que indica la presencia de diabetes. El análisis incluye un procesamiento y transformación detallada de los datos para facilitar el análisis subsecuente.
