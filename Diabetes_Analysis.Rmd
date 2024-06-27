@@ -1,5 +1,5 @@
 ---
-title: "Trabajo final"
+title: "Diabetes Analysis"
 author: "Miguel Sánchez"
 date: '2022-12-07'
 output: word_document
@@ -9,8 +9,10 @@ output: word_document
 
 ```{r}
 #importamos los datos
-datos<-read.csv(file= "/Users/miguel/Desktop/Mineria de datos/Diabetes.csv",sep=",",header = T)
+datos<-read.csv(file="/Users/miguel/Documents/Git_Hub_Proyects/diabetes-analysis-R/Diabetes.csv",sep=",",header = T)
 ```
+
+# Análisis Exploratorio
 
 Vamos a utilizar la libreria skimr para hacer un análisis exploratorio de los datos. En este análisis veremos que tipo de variables tienen los datos (numeric, character o factor), que variables tienen NA´s o valores constantes entre otras cosas.
 
@@ -446,6 +448,8 @@ tuneResult<-tune(svm, Outcome ~.,  data = datos1,
                  ranges = list(epsilon = seq(0,1,0.1), cost =seq(0.05,2,0.05) ))
 tuneResult$best.model
 ```
+
+
 ```{r}
 plot(tuneResult)
 ```
