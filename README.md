@@ -1,4 +1,4 @@
-# Diabetes-Analysis-Project
+# Diabetes-Analysis-in-R
 
 ## Descripción
 Este trabajo fue realizado para la asignatura de Minería de Datos de mi grado universitario en Estadística y Empresa, y en el se realiza un análisis exhaustivo de un conjunto de datos relacionado con la diabetes. Se abordan diversas técnicas de minería de datos, incluyendo imputación de datos faltantes, análisis de componentes principales (PCA), clustering y predicciones usando varios modelos de clasificación.
